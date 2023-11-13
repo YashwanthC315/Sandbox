@@ -1,0 +1,83 @@
+defmodule YouTubeStats do
+  defmodule Video do
+    defstruct [:url, :title, :tags, :published_date, :views, :likes, :dislikes, :comments, :channel, :subscribers]
+  end
+
+  def main do
+    # Get the current timestamp
+    timestamp = DateTime.utc_now() |> DateTime.to_string("YYYYMMddHHmmss")
+
+    # Create the file name with the timestamp
+    file_name = "k8s-videos-091-stats-#{timestamp}.csv"
+
+    # Print the file name
+    IO.puts "Writing to #{file_name}"
+
+    api_key = "some_api_key" # Replace with your actual API key
+    youtube = GoogleApi.YouTube.V3.new(api_key: api_key)
+
+    # Replace the actual path to your CSV file
+    csv_file_path = "k8s-videos-091.csv"
+    csv_data = File.read!(csv_file_path) |> String.split("\n") |> Enum.drop(1) # Skip header
+
+    data =
+      csv_data
+      |> Enum.map(&String.split(&1, ",") |> Enum.at(0)) # Assuming the video link is the first column
+      |> Enum.map(&get_video_stats(youtube, &1))
+      |> Enum.filter(&(&1 != nil))
+
+    # Create CSV file
+    File.write!(file_name, "link,title,tags,published_date,views,likes,dislikes,comments,channel,subscribers\n" <> Enum.join(data, "\n"))
+
+    IO.puts "Process completed."
+  end
+
+  defp get_video_stats(youtube, video_url) do
+    try do
+      video_id = String.split(video_url, "v=") |> List.last()
+
+      video_response =
+        GoogleApi.YouTube.V3.Api.Videos.list(youtube, part: "snippet,statistics", id: video_id)
+        |> GoogleApi.YouTube.V3.make_request()
+
+      video_info = hd(video_response.items)
+
+      title = Map.get(video_info.snippet, "title", "")
+      published_date = Map.get(video_info.snippet, "publishedAt", "")
+      tags = Map.get(video_info.snippet, "tags", [])
+      statistics = Map.get(video_info, "statistics", %{})
+      view_count = Map.get(statistics, "viewCount", 0)
+      like_count = Map.get(statistics, "likeCount", 0)
+      dislike_count = Map.get(statistics, "dislikeCount", 0)
+      comment_count = Map.get(statistics, "commentCount", 0)
+
+      channel_id = Map.get(video_info.snippet, "channelId", "")
+      channel_response =
+        GoogleApi.YouTube.V3.Api.Channels.list(youtube, part: "snippet,statistics", id: channel_id)
+        |> GoogleApi.YouTube.V3.make_request()
+
+      channel_info = hd(channel_response.items)
+      channel_title = Map.get(channel_info.snippet, "title", "")
+      subscribers = Map.get(channel_info.statistics, "subscriberCount", 0)
+
+      %Video{
+        url: video_url,
+        title: title,
+        tags: Enum.join(tags, ","),
+        published_date: published_date,
+        views: Integer.to_string(view_count),
+        likes: Integer.to_string(like_count),
+        dislikes: Integer.to_string(dislike_count),
+        comments: Integer.to_string(comment_count),
+        channel: channel_title,
+        subscribers: Integer.to_string(subscribers)
+      }
+    rescue
+      exception ->
+        IO.puts "An error occurred: #{exception}"
+        nil
+    end
+  end
+end
+
+YouTubeStats.main()
