@@ -1,0 +1,71 @@
+import datetime
+import os
+import googleapiclient.discovery
+import pandas as pd
+
+# Get the current timestamp
+timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
+# Create the file name with the timestamp
+
+file_name = f"k8s-videos-091-stats-{timestamp}.csv"
+
+# Print the file name
+print(f"writing to {file_name}")
+
+api_key = "some_api_key"  # Replace with your actual API key
+youtube = googleapiclient.discovery.build("youtube", "v3", developerKey=api_key)
+
+df = pd.read_csv("k8s-videos-091.csv") #paste the path here
+
+def get_video_stats(video_url):
+    try:
+
+        video_id = video_url.split("v=")[1]
+
+
+        video_response = youtube.videos().list(
+            id=video_id,
+            part="snippet,statistics"
+        ).execute()
+
+        video_info = video_response["items"][0]
+        # print(video_info)
+        title = video_info["snippet"]["title"]
+        published_date = video_info["snippet"]["publishedAt"]
+        tags = video_info["snippet"]["tags"] or []
+        if "statistics" in video_info:
+            statistics = video_info["statistics"]
+            view_count = statistics.get("viewCount", 0)
+            like_count = statistics.get("likeCount", 0)
+            dislike_count = statistics.get("dislikeCount", 0)
+            comment_count = statistics.get("commentCount", 0)
+        else:
+            view_count = like_count = dislike_count = comment_count = 0
+
+        channel_id = video_info["snippet"]["channelId"]
+        channel_response = youtube.channels().list(
+            id=channel_id,
+            part="snippet,statistics"
+        ).execute()
+        channel_info = channel_response["items"][0]
+        channel_title = channel_info["snippet"]["title"]
+        subscribers = channel_info["statistics"]["subscriberCount"]
+
+        return video_url, title, tags, published_date, view_count, like_count, dislike_count, comment_count, channel_title, subscribers
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+
+data = []
+for video_url in df['link']:
+    stats = get_video_stats(video_url)
+    if stats:
+        data.append(stats)
+
+
+df = pd.DataFrame(data, columns=["link", "title", "tags", "published_date", "views", "likes", "dislikes", "comments", "channel", "subscribers"])
+
+df.to_csv(file_name, index=False)
