@@ -1,0 +1,98 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Google.Apis.Services;
+using Google.Apis.YouTube.v3;
+using Google.Apis.YouTube.v3.Data;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        // Get the current timestamp
+        string timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+
+        // Create the file name with the timestamp
+        string fileName = $"k8s-videos-091-stats-{timestamp}.csv";
+
+        // Print the file name
+        Console.WriteLine($"Writing to {fileName}");
+
+        string apiKey = "some_api_key"; // Replace with your actual API key
+        YouTubeService youtube = new YouTubeService(new BaseClientService.Initializer() { ApiKey = apiKey });
+
+        // Replace the actual path to your CSV file
+        string csvFilePath = "k8s-videos-091.csv";
+        List<string> lines = File.ReadAllLines(csvFilePath).ToList();
+
+        List<string[]> data = new List<string[]>();
+        foreach (string line in lines.Skip(1)) // Skip header
+        {
+            string videoUrl = line.Split(',')[0]; // Assuming the video link is the first column
+            string[] stats = GetVideoStats(youtube, videoUrl);
+            if (stats != null)
+            {
+                data.Add(stats);
+            }
+        }
+
+        // Create CSV file
+        using (StreamWriter writer = new StreamWriter(fileName))
+        {
+            writer.WriteLine("link,title,tags,published_date,views,likes,dislikes,comments,channel,subscribers");
+            foreach (string[] stat in data)
+            {
+                writer.WriteLine(string.Join(",", stat));
+            }
+        }
+
+        Console.WriteLine("Process completed. Press any key to exit.");
+        Console.ReadKey();
+    }
+
+    static string[] GetVideoStats(YouTubeService youtube, string videoUrl)
+    {
+        try
+        {
+            string videoId = videoUrl.Split("v=")[1]; // Assuming the video ID is in the URL
+
+            VideosResource.ListRequest videoRequest = youtube.Videos.List("snippet,statistics");
+            videoRequest.Id = videoId;
+            Video videoResponse = videoRequest.Execute().Items.FirstOrDefault();
+
+            if (videoResponse != null)
+            {
+                string title = videoResponse.Snippet.Title;
+                string publishedDate = videoResponse.Snippet.PublishedAt;
+                List<string> tags = videoResponse.Snippet.Tags ?? new List<string>();
+                string viewCount = videoResponse.Statistics.ViewCount.ToString();
+                string likeCount = videoResponse.Statistics.LikeCount.ToString();
+                string dislikeCount = videoResponse.Statistics.DislikeCount.ToString();
+                string commentCount = videoResponse.Statistics.CommentCount.ToString();
+
+                string channelId = videoResponse.Snippet.ChannelId;
+                ChannelsResource.ListRequest channelRequest = youtube.Channels.List("snippet,statistics");
+                channelRequest.Id = channelId;
+                Channel channelResponse = channelRequest.Execute().Items.FirstOrDefault();
+
+                if (channelResponse != null)
+                {
+                    string channelTitle = channelResponse.Snippet.Title;
+                    string subscribers = channelResponse.Statistics.SubscriberCount.ToString();
+
+                    return new string[] { videoUrl, title, string.Join(",", tags), publishedDate, viewCount, likeCount, dislikeCount, commentCount, channelTitle, subscribers };
+                }
+            }
+
+            return null;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"An error occurred: {e}");
+            return null;
+        }
+    }
+}
